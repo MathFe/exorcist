@@ -33,12 +33,17 @@ public class CodeParserService {
     /** RAW skips language-level validation, so code written for Java 1.4 and Java 21 both parse. */
     private final JavaParser parser = new JavaParser(new ParserConfiguration().setLanguageLevel(LanguageLevel.RAW));
 
+    /** True when the source is valid Java, used to check that an exorcised file still parses. */
+    public boolean parses(String source) {
+        return parser.parse(source).isSuccessful();
+    }
+
     public ParsedClass parse(String source, String className) {
         List<String> lines = source.lines().toList();
         ParseResult<CompilationUnit> result = parser.parse(source);
         if (!result.isSuccessful() || result.getResult().isEmpty()) {
             // Still useful: the model gets numbered lines, just without the outline.
-            return new ParsedClass(className, "", className, 1, lines.size(), List.of(), lines, 1, false);
+            return new ParsedClass(className, "", className, 1, lines.size(), List.of(), List.of(), lines, 1, false);
         }
         CompilationUnit unit = result.getResult().get();
         TypeDeclaration<?> type = findType(unit, className).orElseThrow(() -> new ExorcistException(
@@ -51,6 +56,7 @@ public class CodeParserService {
                 beginLine(type),
                 endLine(type),
                 members(type),
+                CodeSmellScanner.scan(type),
                 lines,
                 codeStartLine(unit),
                 true);

@@ -6,11 +6,13 @@ import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.SequencedSet;
 import java.util.stream.Collectors;
 
 import dev.exorcist.ExorcistProperties;
 import dev.exorcist.Possession;
+import dev.exorcist.code.LineRange;
 import dev.exorcist.code.ParsedClass;
 import dev.exorcist.git.CommitInfo;
 import dev.exorcist.git.FileSnapshot.LineBlame;
@@ -31,6 +33,7 @@ public class PromptBuilder {
     private static final DateTimeFormatter DAY = DateTimeFormatter.ISO_LOCAL_DATE;
     private static final int MAX_MESSAGE_LENGTH = 120;
     private static final int MAX_OTHER_HANDS = 15;
+    private static final int FOCUS_CONTEXT_LINES = 40;
 
     private static final String PERSONA = """
             You are the ghost of %1$s, a Java developer who haunts the file %2$s.
@@ -69,6 +72,44 @@ public class PromptBuilder {
             3. Finish with one sentence of advice for the living developer who inherited it.
             """ + CITATION_REMINDER;
 
+    private static final String CONFESS_TASK = """
+            === YOUR TASK ===
+            Confess the sins of this class: its real problems and code smells. Write 3 to 6 confessions, \
+            worst first, as a numbered list. Each confession:
+            - starts with its line numbers, like "1. (lines 40-52) ..."
+            - names the smell (long method, swallowed exception, duplicated code, ...) and explains concretely \
+            why it hurts whoever maintains this code.
+            - may blame another author, theatrically, if GIT MEMORIES show they last wrote those lines.
+            SUSPICIOUS SPOTS are leads with exact lines: confess the ones that are real sins, dismiss the trivial ones, \
+            and add sins the scan cannot see (unclear names, duplication, wrong responsibilities).
+            Only confess what you can point to in the listing: fewer true sins beat many invented ones.
+            End with one sentence of remorse.
+            """ + CITATION_REMINDER;
+
+    private static final String EXORCISE_TASK = """
+            === YOUR TASK ===
+            Perform one exorcism: a refactoring of %s.
+            Your reply must have exactly this shape, and nothing after the code block:
+
+            <two or three sentences, as the ghost, naming the sin you cast out and citing its lines>
+            REPLACE LINES <first>-<last>
+            ```java
+            <the new code that replaces exactly those lines>
+            ```
+            %s
+            Rules for the code:
+            - It replaces whole lines <first>-<last> of the SOURCE CODE listing and is spliced in their place, \
+            so it must cover complete statements or members. If THE CODE TO CAST OUT is given, rewrite exactly that code: \
+            nothing before it, nothing after it.
+            - It must really cast out the sin: returning the same code is a failed exorcism.
+            - Keep the behaviour the same and keep the rest of the file compiling: same public names and signatures.
+            - You cannot add imports: if you need a new type, write its fully qualified name.
+            - No placeholders like "..." or "// rest unchanged". Write every line, without line numbers.
+            - Keep it small: at most %d lines of code.
+            """;
+
+    private static final int MAX_EXORCISM_LINES = 60;
+
     private final ExorcistProperties limits;
 
     public PromptBuilder(ExorcistProperties limits) {
@@ -79,13 +120,46 @@ public class PromptBuilder {
         return new GhostPrompt(persona(possession), facts(possession) + POSSESS_TASK);
     }
 
+    public GhostPrompt confess(Possession possession) {
+        return new GhostPrompt(persona(possession),
+                facts(possession) + suspiciousSpots(possession.parsed()) + "\n" + CONFESS_TASK);
+    }
+
+    /**
+     * @param confession the ghost's earlier confession, so it exorcises a sin it actually admitted
+     * @param target     the lines to rewrite; when empty, the ghost picks them
+     */
+    public GhostPrompt exorcise(Possession possession, Optional<String> confession, Optional<ExorcismTarget> target) {
+        Optional<LineRange> range = target.map(ExorcismTarget::range);
+        StringBuilder user = new StringBuilder(facts(possession, range));
+        confession.ifPresent(text -> user.append("=== YOUR CONFESSION (earlier in this seance) ===\n").append(text.strip()).append("\n\n"));
+        // The exact lines to rewrite, on their own: small models lose track of them in a long listing.
+        range.ifPresent(r -> user.append("=== THE CODE TO CAST OUT (%s, exactly as in the file) ===%n```java%n%s%n```%n%n"
+                .formatted(r, String.join("\n", possession.parsed().lines().subList(r.begin() - 1, r.end())))));
+        String subject = target
+                .map(t -> t.range() + " (" + t.reason() + ")")
+                .orElse(confession.isPresent() ? "your worst confessed sin" : "the worst sin in this class");
+        String fixedRange = range
+                .map(r -> "The REPLACE LINES line must be exactly: REPLACE LINES %d-%d\n".formatted(r.begin(), r.end()))
+                .orElse("");
+        int maxLines = Math.max(MAX_EXORCISM_LINES, range.map(LineRange::size).orElse(0));
+        user.append(EXORCISE_TASK.formatted(subject, fixedRange, maxLines));
+        return new GhostPrompt(persona(possession), user.toString());
+    }
+
     String persona(Possession possession) {
         return PERSONA.formatted(possession.spirit(), possession.ghost().path());
     }
 
     /** The shared context of every prompt about a possessed class. */
     String facts(Possession possession) {
-        return gitMemories(possession) + "\n" + codeStructure(possession.parsed()) + "\n" + sourceCode(possession.parsed()) + "\n";
+        return facts(possession, Optional.empty());
+    }
+
+    /** As {@link #facts(Possession)}, making sure the source listing shows {@code focus} even in a long file. */
+    private String facts(Possession possession, Optional<LineRange> focus) {
+        return gitMemories(possession) + "\n" + codeStructure(possession.parsed()) + "\n"
+                + sourceCode(possession.parsed(), focus) + "\n";
     }
 
     private String gitMemories(Possession possession) {
@@ -180,17 +254,37 @@ public class PromptBuilder {
         return out.toString();
     }
 
-    private String sourceCode(ParsedClass parsed) {
+    private static String suspiciousSpots(ParsedClass parsed) {
+        StringBuilder out = new StringBuilder("=== SUSPICIOUS SPOTS (found by a static scan; judge each one yourself) ===\n");
+        if (parsed.suspects().isEmpty()) {
+            return out.append("The scan found nothing obvious. Look for subtler sins, or admit the code is decent.\n").toString();
+        }
+        parsed.suspects().forEach(s ->
+                out.append("- %s: %s: %s%n".formatted(range(s.beginLine(), s.endLine()), s.kind(), s.detail())));
+        return out.toString();
+    }
+
+    private String sourceCode(ParsedClass parsed, Optional<LineRange> focus) {
         List<String> lines = parsed.lines();
-        int first = Math.min(parsed.codeStartLine(), Math.max(1, lines.size()));
+        int codeStart = Math.min(parsed.codeStartLine(), Math.max(1, lines.size()));
+        int first = codeStart;
         int last = Math.min(lines.size(), first + limits.maxSourceLines() - 1);
+        if (focus.isPresent() && focus.get().end() > last) {
+            // Slide the window so the lines to refactor are visible, with some context before them.
+            first = Math.max(codeStart, focus.get().begin() - FOCUS_CONTEXT_LINES);
+            last = Math.min(lines.size(), first + limits.maxSourceLines() - 1);
+        }
         int width = String.valueOf(last).length();
 
         StringBuilder out = new StringBuilder("=== SOURCE CODE (line numbers on the left");
-        if (first > 1) {
-            out.append("; lines 1-").append(first - 1).append(" are the license header and are omitted");
+        if (codeStart > 1) {
+            out.append("; lines 1-").append(codeStart - 1).append(" are the license header and are omitted");
         }
         out.append(") ===\n");
+        if (first > codeStart) {
+            out.append("[lines %d-%d were cut to fit in memory; CODE STRUCTURE shows what they contain]%n"
+                    .formatted(codeStart, first - 1));
+        }
         for (int n = first; n <= last; n++) {
             out.append(String.format("%" + width + "d| %s%n", n, lines.get(n - 1)));
         }

@@ -1,6 +1,7 @@
 package dev.exorcist.shell;
 
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -9,6 +10,9 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import dev.exorcist.Possession;
+import dev.exorcist.ai.CitationCheck;
+import dev.exorcist.code.DiffService.Patch;
+import dev.exorcist.code.LineRange;
 import dev.exorcist.code.ParsedClass;
 import dev.exorcist.git.GhostProfile;
 import dev.exorcist.git.Graveyard;
@@ -79,6 +83,39 @@ public class Renderer {
             header += "The parser could not read this file; the ghost only sees raw lines.\n";
         }
         return header + "The air grows cold... (" + model + ")\n\n";
+    }
+
+    /** Tells the user how well the ghost kept the "no line number, no claim" rule. */
+    public String citationReport(CitationCheck check) {
+        if (check.clean()) {
+            return "\n\n[%d line citations, all inside the file]\n".formatted(check.citations());
+        }
+        List<String> problems = new ArrayList<>();
+        if (check.citations() == 0) {
+            problems.add("the ghost cited no lines at all, so treat its claims with suspicion");
+        }
+        if (!check.outOfRange().isEmpty()) {
+            problems.add("it cited lines that do not exist: " + check.outOfRange().stream()
+                    .map(String::valueOf).collect(Collectors.joining(", ")));
+        }
+        if (check.uncited() > 0) {
+            problems.add(check.uncited() + (check.uncited() == 1 ? " item cites" : " items cite") + " no line");
+        }
+        return "\n\n[Warning: " + String.join("; ", problems) + "]\n";
+    }
+
+    /** The proposed refactoring, as a diff ready for {@code git apply}. */
+    public String exorcism(Patch patch, LineRange range) {
+        if (patch.isEmpty() || patch.whitespaceOnly()) {
+            return ("\n\nThe ritual failed: the ghost only rewrote %s as they were, and the sin remains."
+                    + " Try exorcise again, or aim at fewer lines with --lines.\n").formatted(range);
+        }
+        StringBuilder out = new StringBuilder("\n\nThe exorcism of ").append(range).append(":\n\n").append(patch.diff());
+        if (!patch.stillParses()) {
+            out.append("\n[Warning: the file no longer parses with this change. Treat it as a sketch, not a cure.]\n");
+        }
+        return out.append("\nNothing was written to disk. To apply it, save the diff to a file and run: git apply <file>\n")
+                .toString();
     }
 
     /** Lists the classes a name could refer to, when it is ambiguous. */

@@ -13,14 +13,26 @@ public class ExorcistSession {
 
     private Graveyard graveyard;
     private Possession possession;
+    private String confession;
 
     public void summoned(Graveyard graveyard) {
         this.graveyard = graveyard;
         this.possession = null;
+        this.confession = null;
     }
 
     public void possessed(Possession possession) {
         this.possession = possession;
+        this.confession = null;
+    }
+
+    public void confessed(String confession) {
+        this.confession = confession;
+    }
+
+    /** The possessed ghost's last confession, if it made one. */
+    public Optional<String> confession() {
+        return Optional.ofNullable(confession);
     }
 
     public Possession requirePossession() {
