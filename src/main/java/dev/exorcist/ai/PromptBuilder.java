@@ -57,8 +57,9 @@ public class PromptBuilder {
     private static final String CITATION_REMINDER = """
 
             Write every sentence about the code in this shape, with the line numbers in parentheses:
-            "<what this part of the code does> (lines 40-44)."
-            "<what this single line does> (line 12)."
+            "<what this part of the code does> (lines <first>-<last>)."
+            "<what this single line does> (line <number>)."
+            using the real numbers from the SOURCE CODE listing.
             Remember: no line number, no claim.
             """;
 
@@ -109,6 +110,18 @@ public class PromptBuilder {
             """;
 
     private static final int MAX_EXORCISM_LINES = 60;
+    private static final int MAX_EPITAPH_LENGTH = 90;
+
+    private static final String EPITAPH_PERSONA = """
+            You carve epitaphs on the tombstones of old Java classes: short, witty, a little gothic, \
+            and true to what the class actually does.
+            """;
+
+    private static final String EPITAPH_TASK = """
+            === YOUR TASK ===
+            Write the epitaph for the tombstone of %s: ONE line, at most 12 words, that says what the class \
+            did in life. Reply with the epitaph only: no quotes, no explanation.
+            """;
 
     private final ExorcistProperties limits;
 
@@ -145,6 +158,25 @@ public class PromptBuilder {
         int maxLines = Math.max(MAX_EXORCISM_LINES, range.map(LineRange::size).orElse(0));
         user.append(EXORCISE_TASK.formatted(subject, fixedRange, maxLines));
         return new GhostPrompt(persona(possession), user.toString());
+    }
+
+    /** A one-line epitaph. Only the outline is sent: one sentence does not need the whole source. */
+    public GhostPrompt epitaph(Possession possession) {
+        ParsedClass parsed = possession.parsed();
+        GhostProfile ghost = possession.ghost();
+        String user = codeStructure(parsed)
+                + (parsed.summary().isEmpty() ? "" : "Its Javadoc says: " + parsed.summary() + "\n")
+                + "Born %s, last changed %s, haunted by %s.%n%n".formatted(
+                        DAY.format(ghost.born().when()), DAY.format(ghost.died().when()), possession.spirit())
+                + EPITAPH_TASK.formatted(parsed.name());
+        return new GhostPrompt(EPITAPH_PERSONA, user);
+    }
+
+    /** Keeps only the epitaph from a reply that may add quotes, labels or extra lines. */
+    public static String epitaphLine(String reply) {
+        String line = reply.lines().map(String::strip).filter(l -> !l.isEmpty()).findFirst().orElse("");
+        line = line.replaceFirst("(?i)^epitaph\\s*:\\s*", "").replaceAll("^[\"'*`]+|[\"'*`]+$", "").strip();
+        return line.length() <= MAX_EPITAPH_LENGTH ? line : line.substring(0, MAX_EPITAPH_LENGTH - 3).strip() + "...";
     }
 
     String persona(Possession possession) {

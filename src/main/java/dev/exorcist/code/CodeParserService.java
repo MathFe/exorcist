@@ -43,7 +43,7 @@ public class CodeParserService {
         ParseResult<CompilationUnit> result = parser.parse(source);
         if (!result.isSuccessful() || result.getResult().isEmpty()) {
             // Still useful: the model gets numbered lines, just without the outline.
-            return new ParsedClass(className, "", className, 1, lines.size(), List.of(), List.of(), lines, 1, false);
+            return new ParsedClass(className, "", className, 1, lines.size(), List.of(), List.of(), lines, 1, "", false);
         }
         CompilationUnit unit = result.getResult().get();
         TypeDeclaration<?> type = findType(unit, className).orElseThrow(() -> new ExorcistException(
@@ -59,7 +59,21 @@ public class CodeParserService {
                 CodeSmellScanner.scan(type),
                 lines,
                 codeStartLine(unit),
+                summary(type),
                 true);
+    }
+
+    /** First sentence of the class Javadoc: "A Decorator that runs a test repeatedly." */
+    private static String summary(TypeDeclaration<?> type) {
+        String text = type.getJavadoc()
+                .map(javadoc -> javadoc.getDescription().toText())
+                .orElse("")
+                .replaceAll("<[^>]+>", "")
+                .replaceAll("\\{@\\w+\\s+([^}]*)}", "$1")
+                .replaceAll("\\s+", " ")
+                .strip();
+        int end = text.indexOf(". ");
+        return end < 0 ? text : text.substring(0, end + 1);
     }
 
     private static Optional<TypeDeclaration<?>> findType(CompilationUnit unit, String className) {

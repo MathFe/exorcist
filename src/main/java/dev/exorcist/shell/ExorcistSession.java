@@ -35,6 +35,10 @@ public class ExorcistSession {
         return Optional.ofNullable(confession);
     }
 
+    public Optional<Possession> possession() {
+        return Optional.ofNullable(possession);
+    }
+
     public Possession requirePossession() {
         if (possession == null) {
             throw new ExorcistException("No class is possessed yet. First: possess <ClassName>");

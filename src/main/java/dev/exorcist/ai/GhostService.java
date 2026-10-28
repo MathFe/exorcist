@@ -50,6 +50,16 @@ public class GhostService {
         }
     }
 
+    /** Sends the prompt and waits for the whole answer: for short answers that are not worth streaming. */
+    public String ask(GhostPrompt prompt) {
+        log.debug("Prompt for {}:\n--- SYSTEM ---\n{}\n--- USER ---\n{}", model, prompt.system(), prompt.user());
+        try {
+            return chatClient.prompt().system(prompt.system()).user(prompt.user()).call().content();
+        } catch (RuntimeException e) {
+            throw translate(e);
+        }
+    }
+
     /** Sends the prompt and streams the answer as it is generated, so the user is not left staring at a frozen terminal. */
     public Flux<String> stream(GhostPrompt prompt) {
         log.debug("Prompt for {}:\n--- SYSTEM ---\n{}\n--- USER ---\n{}", model, prompt.system(), prompt.user());

@@ -17,11 +17,12 @@ import java.util.Set;
  * @param lines         every line of the file; {@code lines.get(0)} is line 1
  * @param codeStartLine first line worth reading: the license header comment above it is skipped
  * @param suspects      code smells found by a static scan, by line
+ * @param summary       first sentence of the class Javadoc, or empty
  * @param parsed        false when JavaParser could not parse the file and only the raw lines are known
  */
 public record ParsedClass(String name, String packageName, String declaration, int beginLine, int endLine,
                           List<Member> members, List<Suspect> suspects, List<String> lines, int codeStartLine,
-                          boolean parsed) {
+                          String summary, boolean parsed) {
 
     private static final Set<String> CALLABLE_KINDS = Set.of("method", "constructor", "initializer", "static initializer");
 

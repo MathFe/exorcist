@@ -37,11 +37,13 @@ public class ExorcistCommands {
     private final ExorcistSession session;
     private final DiffService diffService;
     private final Renderer renderer;
+    private final Style style;
     private final Terminal terminal;
 
     public ExorcistCommands(GhostService ghostService, GitHistoryService gitHistoryService,
                             CodeParserService codeParserService, PromptBuilder promptBuilder,
-                            DiffService diffService, ExorcistSession session, Renderer renderer, Terminal terminal) {
+                            DiffService diffService, ExorcistSession session, Renderer renderer, Style style,
+                            Terminal terminal) {
         this.ghostService = ghostService;
         this.gitHistoryService = gitHistoryService;
         this.codeParserService = codeParserService;
@@ -49,19 +51,21 @@ public class ExorcistCommands {
         this.diffService = diffService;
         this.session = session;
         this.renderer = renderer;
+        this.style = style;
         this.terminal = terminal;
     }
 
     @ShellMethod(key = "seance", value = "Check that the local model answers (talks to Ollama).", group = "Exorcist")
     public String seance(@ShellOption(defaultValue = "Is anyone there?", help = "What to ask the spirit") String message) {
         String answer = ghostService.seance(message);
-        return "[" + ghostService.model() + "] " + answer;
+        return style.dim("[" + ghostService.model() + "] ") + style.voice(answer);
     }
 
     @ShellMethod(key = "summon", value = "Scan a Git repository and list its Java classes with their authors.", group = "Exorcist")
     public String summon(
             @ShellOption(help = "Path to a Git repository, or a folder inside one") String path,
             @ShellOption(defaultValue = "50", help = "Maximum rows to show (0 = all)") int limit) {
+        print(style.dim("Opening the crypt and reading its history...") + "\n");
         Graveyard graveyard = gitHistoryService.summon(Path.of(path));
         session.summoned(graveyard);
         return renderer.graveyard(graveyard, limit);
@@ -69,27 +73,41 @@ public class ExorcistCommands {
 
     @ShellMethod(key = "possess", value = "Let the ghost of a class's author explain it in first person.", group = "Exorcist")
     public void possess(@ShellOption(help = "Class name, qualified name or path, e.g. Assert or org.junit.Assert") String className) {
-        Graveyard graveyard = session.requireGraveyard();
-        GhostProfile ghost = resolve(graveyard, className);
-        FileSnapshot snapshot = gitHistoryService.snapshot(graveyard, ghost);
-        ParsedClass parsed = codeParserService.parse(snapshot.content(), ghost.className());
-        Possession possession = new Possession(ghost, snapshot, parsed);
+        Possession possession = possessionOf(className);
         session.possessed(possession);
 
         print(renderer.possessionHeader(possession, ghostService.model()));
         String explanation = channel(promptBuilder.possess(possession));
-        print(renderer.citationReport(CitationCheck.of(explanation, parsed.lines().size())));
-        print("\nNext: confess | exorcise | epitaph\n");
+        print(renderer.citationReport(CitationCheck.of(explanation, possession.parsed().lines().size())));
+        print("\n" + style.dim("Next: confess | exorcise | epitaph") + "\n");
     }
 
     @ShellMethod(key = "confess", value = "Make the possessing ghost confess the class's problems, line by line.", group = "Exorcist")
     public void confess() {
         Possession possession = session.requirePossession();
-        print("The spirit of %s kneels before %s...%n%n".formatted(possession.spirit(), possession.parsed().name()));
+        print(style.dim("The spirit of ") + style.spirit(possession.spirit()) + style.dim(" kneels before ")
+                + style.title(possession.parsed().name()) + style.dim("...") + "\n\n");
         String confession = channel(promptBuilder.confess(possession));
         session.confessed(confession);
         print(renderer.citationReport(CitationCheck.of(confession, possession.parsed().lines().size())));
-        print("\nNext: exorcise (to cast out the worst sin) | epitaph\n");
+        print("\n" + style.dim("Next: exorcise (to cast out the worst sin) | epitaph") + "\n");
+    }
+
+    @ShellMethod(key = "epitaph", value = "Carve a tombstone for the possessed class (or the one named).", group = "Exorcist")
+    public String epitaph(@ShellOption(defaultValue = ShellOption.NULL,
+            help = "Class to bury (default: the possessed one)") String className) {
+        Possession possession = className == null ? session.requirePossession() : possessionOf(className);
+        print(style.dim("Carving the stone...") + "\n");
+        String fallback = possession.parsed().summary().isEmpty()
+                ? "Here lies a class that did its best."
+                : possession.parsed().summary();
+        try {
+            String carved = PromptBuilder.epitaphLine(ghostService.ask(promptBuilder.epitaph(possession)));
+            return renderer.epitaph(possession, carved.isEmpty() ? fallback : carved);
+        } catch (ExorcistException e) {
+            // The stone can be carved without the model: fall back to the class's own Javadoc.
+            return renderer.epitaph(possession, fallback) + "\n" + style.warning(e.getMessage());
+        }
     }
 
     @ShellMethod(key = "exorcise", value = "Show a suggested refactoring as a unified diff. Never changes files.", group = "Exorcist")
@@ -105,9 +123,8 @@ public class ExorcistCommands {
                     possession.parsed().name(), source.size(), range));
         });
 
-        print(target.map(t -> "Target: %s, %s%n".formatted(t.range(), t.reason())).orElse("The ghost chooses its own target.\n"));
-        print("The ritual begins...\n\n");
-        CodeHidingPrinter printer = new CodeHidingPrinter(terminal.writer());
+        print(renderer.exorcismTarget(target.map(t -> t.range() + ", " + t.reason()).orElse("the ghost chooses its own")));
+        CodeHidingPrinter printer = new CodeHidingPrinter(terminal.writer(), style::voice);
         ghostService.stream(promptBuilder.exorcise(possession, session.confession(), target))
                 .doOnNext(printer::accept)
                 .blockLast();
@@ -122,6 +139,15 @@ public class ExorcistCommands {
         }
         Patch patch = diffService.replace(possession.ghost().path(), source, range, exorcism.code());
         print(renderer.exorcism(patch, range));
+    }
+
+    /** Finds the class, reads it at HEAD with its blame, and parses it. */
+    private Possession possessionOf(String className) {
+        Graveyard graveyard = session.requireGraveyard();
+        GhostProfile ghost = resolve(graveyard, className);
+        FileSnapshot snapshot = gitHistoryService.snapshot(graveyard, ghost);
+        ParsedClass parsed = codeParserService.parse(snapshot.content(), ghost.className());
+        return new Possession(ghost, snapshot, parsed);
     }
 
     private GhostProfile resolve(Graveyard graveyard, String className) {
@@ -146,7 +172,7 @@ public class ExorcistCommands {
         ghostService.stream(prompt)
                 .doOnNext(chunk -> {
                     answer.append(chunk);
-                    out.print(chunk);
+                    out.print(style.voice(chunk));
                     out.flush();
                 })
                 .blockLast();
