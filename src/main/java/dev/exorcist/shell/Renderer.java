@@ -8,6 +8,8 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import dev.exorcist.Possession;
+import dev.exorcist.code.ParsedClass;
 import dev.exorcist.git.GhostProfile;
 import dev.exorcist.git.Graveyard;
 import org.springframework.stereotype.Component;
@@ -33,7 +35,7 @@ public class Renderer {
                 .map(Map.Entry::getKey)
                 .collect(Collectors.toSet());
         Map<GhostProfile, String> labels = shown.stream().collect(Collectors.toMap(Function.identity(),
-                g -> repeatedNames.contains(g.className()) ? g.className() + " (" + packageHint(g.path()) + ")" : g.className()));
+                g -> repeatedNames.contains(g.className()) ? g.className() + " (" + g.packageHint() + ")" : g.className()));
 
         int classWidth = width(List.copyOf(labels.values()), "Class", MAX_CLASS_WIDTH);
         int authorWidth = width(shown.stream().map(GhostProfile::mainAuthor).toList(), "Spirit", MAX_AUTHOR_WIDTH);
@@ -63,22 +65,29 @@ public class Renderer {
         return out.toString();
     }
 
-    /**
-     * Best guess at the package from the file path, used only to tell apart classes with the same name:
-     * {@code src/main/java/org/junit/Assert.java} becomes {@code org.junit}.
-     */
-    private static String packageHint(String path) {
-        String dir = "/" + path.substring(0, Math.max(0, path.lastIndexOf('/'))) + "/";
-        int sourceRoot = dir.lastIndexOf("/java/");
-        String pkg;
-        if (sourceRoot >= 0) {
-            pkg = dir.substring(sourceRoot + "/java/".length());
-        } else if (dir.startsWith("/src/")) {
-            pkg = dir.substring("/src/".length());
-        } else {
-            pkg = dir.substring(1);
+    /** Shown before the ghost starts talking. */
+    public String possessionHeader(Possession possession, String model) {
+        GhostProfile ghost = possession.ghost();
+        ParsedClass parsed = possession.parsed();
+        String header = """
+                Possessing %s (%s)
+                Spirit: %s | born %s | died %s | %d commits | %d lines
+                """.formatted(parsed.qualifiedName(), ghost.path(), possession.spirit(),
+                DATE.format(ghost.born().when()), DATE.format(ghost.died().when()),
+                ghost.commits().size(), parsed.lines().size());
+        if (!parsed.parsed()) {
+            header += "The parser could not read this file; the ghost only sees raw lines.\n";
         }
-        return pkg.isEmpty() ? "default package" : pkg.substring(0, pkg.length() - 1).replace('/', '.');
+        return header + "The air grows cold... (" + model + ")\n\n";
+    }
+
+    /** Lists the classes a name could refer to, when it is ambiguous. */
+    public String candidates(String query, List<GhostProfile> matches) {
+        return "Several spirits answer to '%s'. Be more specific:%n%s".formatted(query, matches.stream()
+                .map(g -> "  possess " + (g.packageHint().equals("default package")
+                        ? g.path()
+                        : g.packageHint() + "." + g.className() + "   (" + g.path() + ")"))
+                .collect(Collectors.joining(System.lineSeparator())));
     }
 
     private static int width(List<String> values, String header, int max) {

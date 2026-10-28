@@ -3,6 +3,7 @@ package dev.exorcist.shell;
 import java.util.Optional;
 
 import dev.exorcist.ExorcistException;
+import dev.exorcist.Possession;
 import dev.exorcist.git.Graveyard;
 import org.springframework.stereotype.Component;
 
@@ -11,9 +12,22 @@ import org.springframework.stereotype.Component;
 public class ExorcistSession {
 
     private Graveyard graveyard;
+    private Possession possession;
 
     public void summoned(Graveyard graveyard) {
         this.graveyard = graveyard;
+        this.possession = null;
+    }
+
+    public void possessed(Possession possession) {
+        this.possession = possession;
+    }
+
+    public Possession requirePossession() {
+        if (possession == null) {
+            throw new ExorcistException("No class is possessed yet. First: possess <ClassName>");
+        }
+        return possession;
     }
 
     public Optional<Graveyard> graveyard() {

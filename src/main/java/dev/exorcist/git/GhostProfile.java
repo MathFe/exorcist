@@ -46,4 +46,27 @@ public record GhostProfile(String className, String path, List<CommitInfo> commi
     public String mainAuthor() {
         return commitsByAuthor().keySet().iterator().next();
     }
+
+    /** Commits by the given author, newest first. */
+    public List<CommitInfo> commitsBy(String author) {
+        return commits.stream().filter(c -> c.author().equals(author)).toList();
+    }
+
+    /**
+     * Best guess at the package from the file path, for display only (the parser reads the real one):
+     * {@code src/main/java/org/junit/Assert.java} becomes {@code org.junit}.
+     */
+    public String packageHint() {
+        String dir = "/" + path.substring(0, Math.max(0, path.lastIndexOf('/'))) + "/";
+        int sourceRoot = dir.lastIndexOf("/java/");
+        String pkg;
+        if (sourceRoot >= 0) {
+            pkg = dir.substring(sourceRoot + "/java/".length());
+        } else if (dir.startsWith("/src/")) {
+            pkg = dir.substring("/src/".length());
+        } else {
+            pkg = dir.substring(1);
+        }
+        return pkg.isEmpty() ? "default package" : pkg.substring(0, pkg.length() - 1).replace('/', '.');
+    }
 }

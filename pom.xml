@@ -22,6 +22,7 @@
         <spring-ai.version>1.1.8</spring-ai.version>
         <spring-shell.version>3.4.3</spring-shell.version>
         <jgit.version>7.8.0.202609011348-r</jgit.version>
+        <javaparser.version>3.28.2</javaparser.version>
     </properties>
 
     <dependencyManagement>
@@ -56,6 +57,11 @@
             <groupId>org.eclipse.jgit</groupId>
             <artifactId>org.eclipse.jgit</artifactId>
             <version>${jgit.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.javaparser</groupId>
+            <artifactId>javaparser-core</artifactId>
+            <version>${javaparser.version}</version>
         </dependency>
 
         <dependency>
