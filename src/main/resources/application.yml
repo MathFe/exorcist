@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: exorcist
+  main:
+    banner-mode: off
+    web-application-type: none
+  ai:
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      init:
+        # Never download models behind the user's back; they run `ollama pull` themselves.
+        pull-model-strategy: never
+      chat:
+        options:
+          # Swap the ghost's brain here, or set EXORCIST_MODEL=llama3.1:8b (any model in `ollama list`).
+          model: ${EXORCIST_MODEL:qwen2.5-coder:7b}
+          temperature: 0.4
+    retry:
+      # Ollama is local: if it is down, fail fast instead of retrying with backoff.
+      max-attempts: 1
+  shell:
+    history:
+      name: ${user.home}/.exorcist_history
+
+logging:
+  level:
+    root: warn
+    # Connection failures are reported by GhostService as friendly messages; skip the retry stack traces.
+    org.springframework.ai.retry: error
