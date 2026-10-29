@@ -57,7 +57,7 @@ public record GhostProfile(String className, String path, List<CommitInfo> commi
      * {@code src/main/java/org/junit/Assert.java} becomes {@code org.junit}.
      */
     public String packageHint() {
-        String dir = "/" + path.substring(0, Math.max(0, path.lastIndexOf('/'))) + "/";
+        String dir = "/" + path.substring(0, path.lastIndexOf('/') + 1);
         int sourceRoot = dir.lastIndexOf("/java/");
         String pkg;
         if (sourceRoot >= 0) {

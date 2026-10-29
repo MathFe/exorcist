@@ -147,7 +147,7 @@ public class PromptBuilder {
         StringBuilder user = new StringBuilder(facts(possession, range));
         confession.ifPresent(text -> user.append("=== YOUR CONFESSION (earlier in this seance) ===\n").append(text.strip()).append("\n\n"));
         // The exact lines to rewrite, on their own: small models lose track of them in a long listing.
-        range.ifPresent(r -> user.append("=== THE CODE TO CAST OUT (%s, exactly as in the file) ===%n```java%n%s%n```%n%n"
+        range.ifPresent(r -> user.append("=== THE CODE TO CAST OUT (%s, exactly as in the file) ===\n```java\n%s\n```\n\n"
                 .formatted(r, String.join("\n", possession.parsed().lines().subList(r.begin() - 1, r.end())))));
         String subject = target
                 .map(t -> t.range() + " (" + t.reason() + ")")
@@ -166,7 +166,7 @@ public class PromptBuilder {
         GhostProfile ghost = possession.ghost();
         String user = codeStructure(parsed)
                 + (parsed.summary().isEmpty() ? "" : "Its Javadoc says: " + parsed.summary() + "\n")
-                + "Born %s, last changed %s, haunted by %s.%n%n".formatted(
+                + "Born %s, last changed %s, haunted by %s.\n\n".formatted(
                         DAY.format(ghost.born().when()), DAY.format(ghost.died().when()), possession.spirit())
                 + EPITAPH_TASK.formatted(parsed.name());
         return new GhostPrompt(EPITAPH_PERSONA, user);
@@ -202,7 +202,7 @@ public class PromptBuilder {
         StringBuilder out = new StringBuilder("=== GIT MEMORIES (facts from the repository history) ===\n");
         out.append("File: ").append(ghost.path()).append('\n');
         out.append("Class: ").append(possession.parsed().qualifiedName()).append('\n');
-        out.append("You are the spirit of: %s, the author with the most commits on this file (%d of %d)%n"
+        out.append("You are the spirit of: %s, the author with the most commits on this file (%d of %d)\n"
                 .formatted(spirit, spiritCommits.size(), ghost.commits().size()));
         out.append("File born: ").append(moment(ghost.born())).append('\n');
         out.append("Your first commit here: ").append(moment(spiritCommits.getLast())).append('\n');
@@ -214,7 +214,7 @@ public class PromptBuilder {
         out.append(lineOwnership(possession.snapshot().blame(), spirit));
         out.append("Commit messages, oldest first:\n");
         for (CommitInfo commit : memorableCommits(ghost, spiritCommits)) {
-            out.append("- %s %s: %s%n".formatted(DAY.format(commit.when()), commit.author(), shorten(commit.message())));
+            out.append("- %s %s: %s\n".formatted(DAY.format(commit.when()), commit.author(), shorten(commit.message())));
         }
         return out.toString();
     }
@@ -225,7 +225,7 @@ public class PromptBuilder {
             return "";
         }
         long mine = blame.stream().filter(line -> line.author().equals(spirit)).count();
-        StringBuilder out = new StringBuilder("Lines alive at HEAD: %d. Last written by you: %d (%d%%).%n"
+        StringBuilder out = new StringBuilder("Lines alive at HEAD: %d. Last written by you: %d (%d%%).\n"
                 .formatted(blame.size(), mine, Math.round(100.0 * mine / blame.size())));
 
         List<Passage> others = new ArrayList<>();
@@ -275,13 +275,13 @@ public class PromptBuilder {
         if (!parsed.parsed()) {
             return out.append("The parser could not read this file, so there is no outline. Rely on the listing.\n").toString();
         }
-        out.append("%s (lines %d-%d)%s%n".formatted(parsed.declaration(), parsed.beginLine(), parsed.endLine(),
+        out.append("%s (lines %d-%d)%s\n".formatted(parsed.declaration(), parsed.beginLine(), parsed.endLine(),
                 parsed.packageName().isEmpty() ? ", default package" : ", package " + parsed.packageName()));
         List<ParsedClass.Member> members = parsed.members();
         members.stream().limit(limits.maxOutlineMembers()).forEach(m ->
-                out.append("- %s %s: %s%n".formatted(m.kind(), m.signature(), range(m.beginLine(), m.endLine()))));
+                out.append("- %s %s: %s\n".formatted(m.kind(), m.signature(), range(m.beginLine(), m.endLine()))));
         if (members.size() > limits.maxOutlineMembers()) {
-            out.append("- ... and %d more members%n".formatted(members.size() - limits.maxOutlineMembers()));
+            out.append("- ... and %d more members\n".formatted(members.size() - limits.maxOutlineMembers()));
         }
         return out.toString();
     }
@@ -292,7 +292,7 @@ public class PromptBuilder {
             return out.append("The scan found nothing obvious. Look for subtler sins, or admit the code is decent.\n").toString();
         }
         parsed.suspects().forEach(s ->
-                out.append("- %s: %s: %s%n".formatted(range(s.beginLine(), s.endLine()), s.kind(), s.detail())));
+                out.append("- %s: %s: %s\n".formatted(range(s.beginLine(), s.endLine()), s.kind(), s.detail())));
         return out.toString();
     }
 
@@ -302,8 +302,10 @@ public class PromptBuilder {
         int first = codeStart;
         int last = Math.min(lines.size(), first + limits.maxSourceLines() - 1);
         if (focus.isPresent() && focus.get().end() > last) {
-            // Slide the window so the lines to refactor are visible, with some context before them.
-            first = Math.max(codeStart, focus.get().begin() - FOCUS_CONTEXT_LINES);
+            // Slide the window so the lines to refactor are visible, with some context before them if it fits.
+            int withContext = focus.get().begin() - FOCUS_CONTEXT_LINES;
+            int showingEnd = focus.get().end() - limits.maxSourceLines() + 1;
+            first = Math.max(codeStart, Math.max(withContext, showingEnd));
             last = Math.min(lines.size(), first + limits.maxSourceLines() - 1);
         }
         int width = String.valueOf(last).length();
@@ -314,14 +316,14 @@ public class PromptBuilder {
         }
         out.append(") ===\n");
         if (first > codeStart) {
-            out.append("[lines %d-%d were cut to fit in memory; CODE STRUCTURE shows what they contain]%n"
+            out.append("[lines %d-%d were cut to fit in memory; CODE STRUCTURE shows what they contain]\n"
                     .formatted(codeStart, first - 1));
         }
         for (int n = first; n <= last; n++) {
-            out.append(String.format("%" + width + "d| %s%n", n, lines.get(n - 1)));
+            out.append(String.format("%" + width + "d| %s\n", n, lines.get(n - 1)));
         }
         if (last < lines.size()) {
-            out.append("[lines %d-%d were cut to fit in memory; CODE STRUCTURE shows what they contain]%n"
+            out.append("[lines %d-%d were cut to fit in memory; CODE STRUCTURE shows what they contain]\n"
                     .formatted(last + 1, lines.size()));
         }
         return out.toString();

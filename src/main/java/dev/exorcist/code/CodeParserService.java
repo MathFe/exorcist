@@ -113,10 +113,11 @@ public class CodeParserService {
             switch (member) {
                 case FieldDeclaration f -> f.getVariables().forEach(v -> members.add(new ParsedClass.Member(
                         "field", modifiers(f) + v.getTypeAsString() + " " + v.getNameAsString(), beginLine(f), endLine(f))));
+                // strip(): without modifiers, JavaParser leaves a leading space (" void log()").
                 case ConstructorDeclaration c -> members.add(new ParsedClass.Member(
-                        "constructor", c.getDeclarationAsString(true, false, true), beginLine(c), endLine(c)));
+                        "constructor", c.getDeclarationAsString(true, false, true).strip(), beginLine(c), endLine(c)));
                 case MethodDeclaration m -> members.add(new ParsedClass.Member(
-                        "method", m.getDeclarationAsString(true, false, true), beginLine(m), endLine(m)));
+                        "method", m.getDeclarationAsString(true, false, true).strip(), beginLine(m), endLine(m)));
                 case TypeDeclaration<?> t -> members.add(new ParsedClass.Member(
                         "nested " + kind(t), t.getNameAsString(), beginLine(t), endLine(t)));
                 case InitializerDeclaration i -> members.add(new ParsedClass.Member(
