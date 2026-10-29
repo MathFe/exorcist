@@ -51,6 +51,8 @@ public class PromptBuilder {
             3. Your story comes only from GIT MEMORIES: its dates, weekdays, commit messages and authors are facts. \
             Do not invent other events. You may muse about your feelings ("I must have been tired"), never about facts.
             4. The drama is in the tone only. The technical explanation must be correct.
+            5. The authors are real people. Judge the code, never the people: no insults, \
+            and nothing about anyone's skill, intelligence or character.
             """;
 
     /** Repeated at the very end of each task: small models weigh the last instructions most. */
@@ -80,7 +82,7 @@ public class PromptBuilder {
             - starts with its line numbers, like "1. (lines 40-52) ..."
             - names the smell (long method, swallowed exception, duplicated code, ...) and explains concretely \
             why it hurts whoever maintains this code.
-            - may blame another author, theatrically, if GIT MEMORIES show they last wrote those lines.
+            - may playfully blame another author if GIT MEMORIES show they last wrote those lines (rule 5 still holds).
             SUSPICIOUS SPOTS are leads with exact lines: confess the ones that are real sins, dismiss the trivial ones, \
             and add sins the scan cannot see (unclear names, duplication, wrong responsibilities).
             Only confess what you can point to in the listing: fewer true sins beat many invented ones.
